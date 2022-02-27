@@ -117,16 +117,22 @@ export const reloadAll = <S extends Stores>(
 };
 
 // STORES
+
 /**
- * Generate a Loadable store that is considered 'loaded' after resolving asynchronous behavior.
- * This asynchronous behavior may be derived from the value of parent Loadable or non Loadable stores.
+ * Generate a Loadable store that is considered 'loaded' after resolving synchronous or asynchronous behavior.
+ * This behavior may be derived from the value of parent Loadable or non Loadable stores.
  * If so, this store will begin loading only after the parents have loaded.
+ * This store is also writable. It includes a `set` function that will immediately update the value of the store
+ * and then execute provided asynchronous behavior to persist this change.
  * @param stores Any readable or array of Readables whose value is used to generate the asynchronous behavior of this store.
  * Any changes to the value of these stores post-load will restart the asynchronous behavior of the store using the new values.
  * @param mappingLoadFunction A function that takes in the values of the stores and generates a Promise that resolves
  * to the final value of the store when the asynchronous behavior is complete.
+ * @param mappingWriteFunction A function that takes in the new value of the store and uses it to perform async behavior.
+ * Typically this would be to persist the change. If this value resolves to a value the store will be set to it.
  * @param reloadable A flag that indicates whether this store should restart its asynchronous behavior whenever `reload`
- * is invoked on this store or any of its children.
+ * is invoked on this store or any of its children. If this store is reloadable it will also restart its asynchronous behavior
+ * after it has finished handling 'setting' the store.
  * @param initial The initial value of the store before it is loaded or on load failure. Otherwise undefined.
  * @returns A Loadable store whose value is set to the resolution of provided async behavior.
  * The loaded value of the store will be ready after awaiting the load function of this store.
@@ -222,6 +228,20 @@ export const asyncWritable = <S extends Stores, T>(
   };
 };
 
+/**
+ * Generate a Loadable store that is considered 'loaded' after resolving asynchronous behavior.
+ * This asynchronous behavior may be derived from the value of parent Loadable or non Loadable stores.
+ * If so, this store will begin loading only after the parents have loaded.
+ * @param stores Any readable or array of Readables whose value is used to generate the asynchronous behavior of this store.
+ * Any changes to the value of these stores post-load will restart the asynchronous behavior of the store using the new values.
+ * @param mappingLoadFunction A function that takes in the values of the stores and generates a Promise that resolves
+ * to the final value of the store when the asynchronous behavior is complete.
+ * @param reloadable A flag that indicates whether this store should restart its asynchronous behavior whenever `reload`
+ * is invoked on this store or any of its children.
+ * @param initial The initial value of the store before it is loaded or on load failure. Otherwise undefined.
+ * @returns A Loadable store whose value is set to the resolution of provided async behavior.
+ * The loaded value of the store will be ready after awaiting the load function of this store.
+ */
 export const asyncDerived = <S extends Stores, T>(
   stores: S,
   mappingLoadFunction: (values: StoresValues<S>) => Promise<T>,
@@ -284,42 +304,3 @@ export const derived = <S extends Stores, T>(
     }),
   };
 };
-
-const shortcuts = asyncWritable(
-  [],
-  async () => {
-    const response = await fetch('https://ourdomain.com/shortcuts');
-    return response.json();
-  },
-  async (newShortcutsList) => {
-    const postBody = JSON.stringify({ shortcuts: newShortcutsList });
-    const response = await fetch('https://ourdomain.com/shortcuts', {
-      method: 'POST',
-      body: postBody,
-    });
-    return response.json();
-  }
-);
-
-const shortcuts = asyncWritable(
-  authToken,
-  async ($authToken) => {
-    const requestBody = JSON.stringify({ authorization: $authToken });
-    const response = await fetch(
-      'https://ourdomain.com/shortcuts',
-      requestBody
-    );
-    return response.json();
-  },
-  async (newShortcutsList, $authToken) => {
-    const postBody = JSON.stringify({
-      authorization: $authToken,
-      shortcuts: newShortcutsList,
-    });
-    const response = await fetch('https://ourdomain.com/shortcuts', {
-      method: 'POST',
-      body: postBody,
-    });
-    return response.json();
-  }
-);
