@@ -1,9 +1,11 @@
 {
   "name": "svelte-fancy-stores",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "files": ["lib/**/*"],
+  "files": [
+    "lib/**/*"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Akolyte01/svelte-fancy-stores.git"
@@ -25,13 +27,15 @@
       "js",
       "ts"
     ],
-    "roots": ["./test"]
+    "roots": [
+      "./test"
+    ]
   },
   "devDependencies": {
     "@tsconfig/svelte": "^2.0.0",
+    "@types/jest": "^27.0.2",
     "@typescript-eslint/eslint-plugin": "^4.31.2",
     "@typescript-eslint/parser": "^4.31.2",
-    "@types/jest": "^27.0.2",
     "eslint": "^7.32.0",
     "eslint-plugin-square": "^20.0.2",
     "eslint-plugin-svelte3": "^3.2.1",

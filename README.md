@@ -67,6 +67,7 @@ Now we have a Loadable and Reloadable userInfo store! As soon as our app renders
 ## derived
 
 Okay this isn't a new store, but it does have some new features! We declare a derived store the same as ever, but if we derive from a ny Loadable store the derived store will also be Loadable, and the same for Reloadable.
+
 *What does that mean for our app..?*
 
 ```javascript
@@ -79,6 +80,7 @@ Now we've got a darkMode store that tracks whether our user has selected darkMod
 ## asyncDerived
 
 An asyncDerived store works just like a derived store, but with an asynchronous call to get the final value of the store!
+
 *Let's jump right in...*
 
 ```javascript
@@ -100,6 +102,7 @@ Here we have a store that reflects a paginated set of results from an endpoint. 
 ## asyncWritable
 
 Here's where things get a little more complicated. Just like the other async stores this store mirrors an existing store. Like a regular writable store this store will have a `set` function that lets you set its value. But why would we want to set the value of the store if the store's value comes from a network call? To answer this let's consider the following use case: in our app we have a list of shortcuts for our user. They can rearrange these shortcuts in order to personalize their experience. When a user rearranges their shortcuts we could manually make a new network request to save their choice, then reload the async store that tracks the list of shortcuts. However that would mean that the user would not see the results of their customization until the network request completes. Instead we can use an asyncWritable store. When the user customizes their list of shortcuts we will optimistically update the corresponding store. This update kicks off a network request to save the user's customization to our backend. Finally, when the network request completes we update our store to reflect the canonical version of the user's list.
+
 *So how do we accomplish this using an asyncWritable store..?*
 
 ```javascript
@@ -121,6 +124,7 @@ const shortcuts = asyncWritable(
 ```
 
 Our first two arguments work just like an asyncDerived store--we can pass any number of stores and we can use their values to set the value of the store once the parents have loaded. For our third argument we provide a write function that is invoked when we `set` the value of the store ourself. It takes in the new value of the store and then performs the work to persist that to the backend. If we invoke `shortcuts.set()` first the store updates to the value we pass to the function. then it invokes the async function we provided during definition in order to persist the new data. Finally it sets the value of the store to what we return from the async function. If our endpoint does not return any useful data we can instead have our async function return void and skip this step. Additionally we can provide a boolean to declare this store to be Reloadable as with other async stores. If we do so the store will reload once we have finished setting. This allows us to reload our store with canonical data if we need. One final feature is that we can include a second argument for our write function that will receive the values of parent stores.
+
 *Let's look at what that looks like...*
 
 ```javascript
@@ -150,6 +154,138 @@ const shortcuts = asyncWritable(
 
 In this example we derive from an authToken store and include it in both our GET and POST requests.
 
-### Conclusion
+### Additional functions
 
-With these tools combined we can manage complex asynchronous dependencies as easily as we create synchronous stores. All of the smarts are handled by syntax you are already familiar with. So dive in, and have fun!
+# isLoadable and isReloadable
+
+The isLoadable and isReloadable functions let you check if a store is Loadable or Reloadable at runtime.
+
+# loadAll
+
+The loadAll function can take in an array of stores and returns a promise that will resolve when any loadable stores provided finish loading. This is useful if you have a component that uses multiple stores and want to delay rendering until those stores have populated.
+
+### Putting it all Together
+
+The usefulness of async stores becomes more obvious when dealing with complex relationships between different pieces of async data.
+
+Let's consider a contrived example. We are developing a social media website that lets users share and view blogs. In a sidebar we have a list of shortcuts to the users favorite blogs with along with a blurb from their most recent post. We would like to test a feature with 5% of users where we also provide a few suggested blogs alongside their favorites. As the user views new blogs, their suggested list of blogs also updates based on their indicated interests. To support this we have a number of endpoints.
+
+- A `personalization` endpoint provides a list of the user's favorite and suggested blogs.
+- A `preview` endpoint lets us fetch a blurb for the most recent post of a given blog.
+- A `favorites` endpoint lets us POST updates a user makes to their favorites.
+- A `testing` endpoint lets us determine if the user should be included in the feature test.
+- A `user` endpoint lets us gather user info, including a token for identifying the user when calling other endpoints.
+
+We've got some challenges here. We need the user's ID before we take any other step. We need to query the testing endpoint before we will know whether to display suggestions alongside favorites. And whenever a users shortcuts update we'll need to update our preview blurbs to match.
+
+Without async stores this could get messy! However by approaching this using stores all we need to worry about is one piece of data at a time, and the pieces we need to get it.
+
+*Let's look at the implementation...*
+
+```javascript
+const userToken = asyncReadable(undefined, async () => {
+  const userData = await getUserData();
+  return userData.token;
+});
+
+const showSuggestions = asyncDerived(userToken, async ($userToken) => {
+  const testFlags = await getTestParticipation($userToken);
+  return testFlags['SHOW_SUGGESTIONS'];
+});
+
+
+// We declare userPersonalization to be reloadable so that we can fetch
+// new suggestions.
+const userPersonalization = asyncDerived(
+  userToken,
+  async ($userToken) => {
+    return await getPersonalization($userToken);
+  },
+  true
+);
+
+// Note that this store's GET function is not async, while its SET is.
+// asyncWritables only require an async function for its setting.
+// We derive from the userPersonalization store to GET data, but from
+// userToken to SET data. We use a `_` to indicate values that are unused.
+const favoriteBlogs = asyncWritable(
+  [userPersonalization, userToken],
+  ([$userPersonalization, _]) => $userPersonalization.favorites,
+  async (newFavorites, [_, $userToken]) => {
+    const savedFavorites = await setFavorites(newFavorites, $userToken);
+  },
+  true
+);
+
+const suggestedBlogs = derived(
+  userPersonalization,
+  ($userPersonalization) => $userPersonalization.suggested
+);
+
+export const blogShortcuts = derived(
+  [favoriteBlogs, suggestedBlogs, showSuggestions],
+  ([$favoriteBlogs, $suggestedBlogs, $showSuggestions]) => {
+    const shortcuts = $favoriteBlogs;
+    if ($showSuggestions) {
+      shortcuts.concat($suggestedBlogs);
+    }
+    return shortcuts;
+  }
+);
+
+// Here we generate promises to load previews for each of the blogShortcuts.
+// We await all of these promises and use them to populate a map for the blog id
+// to the relevant preview.
+export const blogPreviews = asyncDerived(
+  blogShortcuts,
+  async ($blogShortcuts) => {
+    const blogPreviewsById = {};
+    const loadPreviewPromises = $blogShortcuts.map(blogShortcut, async () => {
+      const preview = await getPreview(blogShortcut.id);
+      blogPreviewsById[blogShortcut.id] = preview;
+    });
+    await Promise.all(loadPreviewPromises);
+    return blogPreviewsById;
+  }
+);
+```
+
+```html
+// ShortcutsSidebar.svelte
+<script>
+  import { onMount } from 'svelte';
+  import { blogShortcuts, blogPreviews, favoriteBlogs } from 'ourstores';
+
+  onMount(() => {
+    const onSuggestionsUpdate = () => { blogShortcuts.reload() };
+    window.addEventListener('SUGGESTIONS_UPDATE', onSuggestionsUpdate);
+    return () => window.removeEventListener('SUGGESTIONS_UPDATE', onSuggestionsUpdate);
+  })
+
+  const removeShortcut = (blogIdToRemove) => {
+    favoriteBlogs.set($favoriteBlogs.filter( (blog) => blog.id !== blogIdToRemove ));
+  }
+</script>
+```
+
+```svelte
+
+{#await blogShortcuts.load()}
+  <LoadingSpinner/>
+{:then}
+  {#each $blogShortcuts as blog}
+    <BlogShortcut model={blog} on:remove={removeShortcut}>
+      {$blogPreviews[blog.id] || ''}
+    </BlogShortcut>
+  {/each}
+{/await}
+
+```
+
+In our component we await blogShortcuts loading. The act of subscribing to blogShortcuts kicks off the loading of blogShortcuts' parents, and the parents' parents in turn. As a result awaiting blogShortcuts loading waits for all of the dependencies without us having to account for them beyond writing our stores.
+
+During mounting of our component we create an event listener that will trigger upon a `SUGGESTIONS_UPDATE` event that could be triggered as our user performs actions that provide signal for blog suggestions. When this happens we call `blogShortcuts.reload()`. Note that we did not specify that blogShortcuts is Reloadable. However since it ultimately derives from the Reloadable userPersonalization store, blogShortcuts will have access to the reload function to reload any appropriate ancestors. In this case it will mean that userPersonalization will reload, while userToken and showSuggestions will not. Any changes to userPersonalization will propagate down the chain of derived stores, and when it reaches blogPreviews it will fetch blurbs for the new set of blogs. The updated list of blogs will render immediately while the blurbs for any new blogs will load lazily.
+
+If a user dismisses one of their favorites we will `set` favoriteBlogs. This means we will immediately update the favoriteBlogs store, and thus blogShortcuts, as a derived store, will update as well. This means we can give our user instant feedback for their dismiss action. After the store updates the SET function we provided in defining favoriteBlogs will execute, saving the new list of favorites to our backend. Since we did not return a value in that SET function the value of the store will not update when this async behavior completes. Instead we have declared favoriteBlogs to be Reloadable, so it will attempt to reload data after it has saved to our backend. As before this will reload the store's Reloadable ancestor--userPersonalization. This means we can reactively update any changes to suggestions that occur as a result of changes to favorites, and in turn fetch any new blurbs needed.
+
+That's a lot going on! However it is all handled by the contracts we have established between stores. Once you understand the capabilities of each kind of store it becomes easy to break apart complicated order of operation problems simply by tackling things one store at a time. So dive in, and have fun!
