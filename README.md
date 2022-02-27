@@ -154,17 +154,17 @@ const shortcuts = asyncWritable(
 
 In this example we derive from an authToken store and include it in both our GET and POST requests.
 
-### Additional functions
+## Additional functions
 
-# isLoadable and isReloadable
+### isLoadable and isReloadable
 
 The isLoadable and isReloadable functions let you check if a store is Loadable or Reloadable at runtime.
 
-# loadAll
+### loadAll
 
 The loadAll function can take in an array of stores and returns a promise that will resolve when any loadable stores provided finish loading. This is useful if you have a component that uses multiple stores and want to delay rendering until those stores have populated.
 
-### Putting it all Together
+## Putting it all Together
 
 The usefulness of async stores becomes more obvious when dealing with complex relationships between different pieces of async data.
 
