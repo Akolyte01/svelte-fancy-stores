@@ -1,8 +1,11 @@
+/* eslint-disable prefer-promise-reject-errors */
 import {
   asyncDerived,
   asyncReadable,
+  asyncWritable,
   derived,
   get,
+  isReloadable,
   Loadable,
   loadAll,
   readable,
@@ -59,7 +62,7 @@ describe('loadAll / reloadAll utils', () => {
   });
 });
 
-describe('asyncDerived', () => {
+describe('asyncWritable', () => {
   const writableParent = writable('writable');
   let mockReload = jest.fn();
 
@@ -82,7 +85,7 @@ describe('asyncDerived', () => {
       const myAsyncDerived = asyncReadable(undefined, () =>
         Promise.resolve('expected')
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('expected');
       await myAsyncDerived.load();
@@ -93,26 +96,24 @@ describe('asyncDerived', () => {
       const myAsyncDerived = asyncReadable('initial', () =>
         Promise.reject(new Error('error'))
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).rejects.toStrictEqual(new Error('error'));
       await myAsyncDerived.load().catch(() => Promise.resolve());
       expect(get(myAsyncDerived)).toBe('initial');
     });
 
-    it('does not reload if not reloadable', async () => {
+    it('does not reload if not reloadable', () => {
       const myAsyncDerived = asyncReadable(undefined, mockReload);
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('first value');
-      expect(myAsyncDerived.reload()).resolves.toBe('first value');
-      await myAsyncDerived.reload();
-      expect(get(myAsyncDerived)).toBe('first value');
+      expect(isReloadable(myAsyncDerived)).toBeFalsy();
     });
 
     it('does reload if reloadable', async () => {
       const myAsyncDerived = asyncReadable(undefined, mockReload, true);
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('first value');
       await myAsyncDerived.load();
@@ -122,12 +123,12 @@ describe('asyncDerived', () => {
     });
   });
 
-  describe('one parent', () => {
+  describe('one parent asyncDerived', () => {
     it('loads expected value', async () => {
       const myAsyncDerived = asyncDerived(writableParent, (storeValue) =>
         Promise.resolve(`derived from ${storeValue}`)
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('derived from writable');
       await myAsyncDerived.load();
@@ -141,21 +142,19 @@ describe('asyncDerived', () => {
         false,
         'initial'
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).rejects.toStrictEqual(new Error('error'));
       await myAsyncDerived.load().catch(() => Promise.resolve());
       expect(get(myAsyncDerived)).toBe('initial');
     });
 
-    it('does not reload if not reloadable', async () => {
+    it('does not reload if not reloadable', () => {
       const myAsyncDerived = asyncDerived(writableParent, mockReload);
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('first value');
-      expect(myAsyncDerived.reload()).resolves.toBe('first value');
-      await myAsyncDerived.reload();
-      expect(get(myAsyncDerived)).toBe('first value');
+      expect(isReloadable(myAsyncDerived)).toBeFalsy();
     });
 
     it('does reload if reloadable', async () => {
@@ -165,7 +164,7 @@ describe('asyncDerived', () => {
         true,
         undefined
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('first value');
       await myAsyncDerived.load();
@@ -176,7 +175,7 @@ describe('asyncDerived', () => {
 
     it('does reload if parent updates', async () => {
       const myAsyncDerived = asyncDerived(writableParent, mockReload);
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       await myAsyncDerived.load();
       expect(get(myAsyncDerived)).toBe('first value');
@@ -185,7 +184,7 @@ describe('asyncDerived', () => {
       expect(get(myAsyncDerived)).toBe('second value');
     });
 
-    it('loads asyncReadable parent', async () => {
+    it('loads asyncReadable parent', () => {
       const asyncReadableParent: Loadable<string> = asyncReadable(
         undefined,
         mockReload
@@ -193,12 +192,10 @@ describe('asyncDerived', () => {
       const myAsyncDerived = asyncDerived(asyncReadableParent, (storeValue) =>
         Promise.resolve(`derived from ${storeValue}`)
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).resolves.toBe('derived from first value');
-      await myAsyncDerived.reload();
-      expect(get(myAsyncDerived)).toBe('derived from first value');
-      expect(myAsyncDerived.load()).resolves.toBe('derived from first value');
+      expect(isReloadable(myAsyncDerived)).toBeFalsy();
     });
 
     it('reloads reloadable parent', async () => {
@@ -210,7 +207,7 @@ describe('asyncDerived', () => {
       const myAsyncDerived = asyncDerived(asyncReadableParent, (storeValue) =>
         Promise.resolve(`derived from ${storeValue}`)
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       await myAsyncDerived.load();
       expect(get(myAsyncDerived)).toBe('derived from first value');
@@ -227,13 +224,13 @@ describe('asyncDerived', () => {
       const myAsyncDerived = asyncDerived(asyncReadableParent, (storeValue) =>
         Promise.resolve(`derived from ${storeValue}`)
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       expect(myAsyncDerived.load()).rejects.toStrictEqual(new Error('error'));
     });
   });
 
-  describe('multiple parents', () => {
+  describe('multiple parents asyncDerived', () => {
     it('correctly derives from every kind of parent', async () => {
       const asyncReadableParent: Loadable<string> = asyncReadable(
         undefined,
@@ -251,7 +248,7 @@ describe('asyncDerived', () => {
             `derived from ${$writableParent}, ${$loadableParent}, ${$reloadableParent}`
           )
       );
-      const fakeSubscribe = myAsyncDerived.subscribe(jest.fn);
+      myAsyncDerived.subscribe(jest.fn);
 
       await myAsyncDerived.load();
       expect(get(myAsyncDerived)).toBe(
@@ -278,7 +275,7 @@ describe('asyncDerived', () => {
         ([$writableParent, $delayedParent]) =>
           mockReload().then((response) => `${$writableParent}: ${response}`)
       );
-      const fakeSubscribe = myDerived.subscribe(jest.fn);
+      myDerived.subscribe(jest.fn);
       writableParent.set('A');
       writableParent.set('B');
       writableParent.set('C');
@@ -293,6 +290,247 @@ describe('asyncDerived', () => {
       writableParent.set('L');
       await myDerived.load();
       expect(get(myDerived)).toBe('L: first value');
+    });
+  });
+
+  describe('no parents asyncWritable', () => {
+    it('sets given value when given void write function', async () => {
+      const mappingWriteFunction = jest.fn(() => Promise.resolve());
+      const myAsyncWritable = asyncWritable(
+        [],
+        () => Promise.resolve('initial'),
+        mappingWriteFunction
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('initial');
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('initial');
+
+      await myAsyncWritable.set('final');
+      expect(get(myAsyncWritable)).toBe('final');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('sets final value when given type returning write function', async () => {
+      const mappingWriteFunction = jest.fn((value) =>
+        Promise.resolve(`resolved from ${value}`)
+      );
+      const myAsyncWritable = asyncWritable(
+        [],
+        () => Promise.resolve('initial'),
+        mappingWriteFunction
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('initial');
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('initial');
+
+      await myAsyncWritable.set('intermediate');
+      expect(get(myAsyncWritable)).toBe('resolved from intermediate');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads value when reloadable', async () => {
+      const mappingLoadFunction = jest.fn(() => Promise.resolve('load'));
+      const mappingWriteFunction = jest.fn(() => Promise.resolve('write'));
+      const myAsyncWritable = asyncWritable(
+        [],
+        mappingLoadFunction,
+        mappingWriteFunction,
+        true
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('load');
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('load');
+
+      await myAsyncWritable.set('set');
+      expect(get(myAsyncWritable)).toBe('load');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+      expect(mappingLoadFunction).toHaveBeenCalledTimes(2);
+    });
+
+    it('still sets value when rejected', async () => {
+      const mappingWriteFunction = jest.fn(() => Promise.reject());
+      const myAsyncWritable = asyncWritable(
+        [],
+        () => Promise.resolve('initial'),
+        mappingWriteFunction
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('initial');
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('initial');
+
+      await myAsyncWritable.set('final').catch(() => Promise.resolve());
+      expect(get(myAsyncWritable)).toBe('final');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('asyncWritable with parents', () => {
+    it('loads expected value', async () => {
+      const mappingWriteFunction = jest.fn(() => Promise.resolve());
+      const myAsyncWritable = asyncWritable(
+        writableParent,
+        (storeValue) => Promise.resolve(`derived from ${storeValue}`),
+        mappingWriteFunction
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('derived from writable');
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('derived from writable');
+
+      await myAsyncWritable.set('final');
+      expect(get(myAsyncWritable)).toBe('final');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('still sets value when rejected', async () => {
+      const mappingWriteFunction = jest.fn(() => Promise.reject());
+      const myAsyncWritable = asyncWritable(
+        writableParent,
+        () => Promise.reject(new Error('error')),
+        mappingWriteFunction,
+        false,
+        'initial' as string
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).rejects.toStrictEqual(new Error('error'));
+      await myAsyncWritable.load().catch(() => Promise.resolve());
+      expect(get(myAsyncWritable)).toBe('initial');
+
+      await myAsyncWritable.set('final').catch(() => Promise.resolve());
+      expect(get(myAsyncWritable)).toBe('final');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not reload if not reloadable', () => {
+      const myAsyncWritable = asyncWritable(writableParent, mockReload, () =>
+        Promise.resolve()
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('first value');
+      expect(isReloadable(myAsyncWritable)).toBeFalsy();
+    });
+
+    it('does reload if reloadable', async () => {
+      const myAsyncWritable = asyncWritable(
+        writableParent,
+        mockReload,
+        () => Promise.resolve(),
+        true,
+        undefined
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('first value');
+      await myAsyncWritable.load();
+      await myAsyncWritable.reload();
+      expect(get(myAsyncWritable)).toBe('second value');
+      expect(myAsyncWritable.load()).resolves.toBe('second value');
+    });
+
+    it('does reload if parent updates', async () => {
+      const myAsyncWritable = asyncWritable(writableParent, mockReload, () =>
+        Promise.resolve()
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('first value');
+      writableParent.set('updated');
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('second value');
+    });
+
+    it('loads asyncReadable parent', () => {
+      const asyncReadableParent: Loadable<string> = asyncReadable(
+        undefined,
+        mockReload
+      );
+      const myAsyncWritable = asyncWritable(
+        asyncReadableParent,
+        (storeValue) => `derived from ${storeValue}`,
+        () => Promise.resolve()
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).resolves.toBe('derived from first value');
+      expect(isReloadable(myAsyncWritable)).toBeFalsy();
+    });
+
+    it('can access asyncReadable parent loaded value while writing', async () => {
+      const asyncReadableParent: Loadable<string> = asyncReadable(
+        undefined,
+        mockReload
+      );
+      const myAsyncWritable = asyncWritable(
+        asyncReadableParent,
+        (storeValue) => `derived from ${storeValue}`,
+        (value, $asyncReadableParent) =>
+          Promise.resolve(
+            `constructed from ${value} and ${$asyncReadableParent}`
+          )
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      await myAsyncWritable.set('set value');
+      expect(get(myAsyncWritable)).toBe(
+        'constructed from set value and first value'
+      );
+    });
+
+    it('reloads reloadable parent', async () => {
+      const asyncReadableParent: Loadable<string> = asyncReadable(
+        undefined,
+        mockReload,
+        true
+      );
+      const myAsyncWritable = asyncWritable(
+        asyncReadableParent,
+        (storeValue) => `derived from ${storeValue}`,
+        () => Promise.resolve(),
+        true
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      await myAsyncWritable.load();
+      expect(get(myAsyncWritable)).toBe('derived from first value');
+      await myAsyncWritable.reload();
+      expect(get(myAsyncWritable)).toBe('derived from second value');
+      expect(myAsyncWritable.load()).resolves.toBe('derived from second value');
+
+      await myAsyncWritable.set('set value');
+      expect(get(myAsyncWritable)).toBe('derived from third value');
+    });
+
+    it('rejects load when parent load fails', () => {
+      const asyncReadableParent: Loadable<string> = asyncReadable(
+        undefined,
+        () => Promise.reject(new Error('error'))
+      );
+      const myAsyncWritable = asyncWritable(
+        asyncReadableParent,
+        (storeValue) => Promise.resolve(`derived from ${storeValue}`),
+        () => Promise.resolve()
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      expect(myAsyncWritable.load()).rejects.toStrictEqual(new Error('error'));
     });
   });
 });
@@ -331,7 +569,7 @@ describe('synchronous derived', () => {
         ([$nonAsyncParent, $loadableParent, $derivedParent]) =>
           `derived from ${$nonAsyncParent}, ${$loadableParent}, ${$derivedParent}`
       );
-      const fakeSubscribe = myDerived.subscribe(jest.fn);
+      myDerived.subscribe(jest.fn);
 
       expect(myDerived.load()).resolves.toBe(
         'derived from writable, loadable, FIRST VALUE'
@@ -351,7 +589,7 @@ describe('synchronous derived', () => {
         nonAsyncParent,
         ($nonAsyncParent) => $nonAsyncParent
       );
-      const fakeSubscribe = myDerived.subscribe(jest.fn);
+      myDerived.subscribe(jest.fn);
 
       nonAsyncParent.set('A');
       nonAsyncParent.set('B');
@@ -369,3 +607,4 @@ describe('synchronous derived', () => {
     });
   });
 });
+/* eslint-enable prefer-promise-reject-errors */

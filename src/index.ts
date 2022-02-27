@@ -26,6 +26,10 @@ export interface Loadable<T> extends Readable<T> {
   reload?(): Promise<T>;
 }
 
+export interface WritableLoadable<T> extends Loadable<T> {
+  set(value: T): Promise<void>;
+}
+
 /* These types come from Svelte but are not exported, so copying them here */
 /* One or more `Readable`s. */
 export declare type Stores =
@@ -45,15 +49,16 @@ const getStoresArray = (stores: Stores): Readable<unknown>[] => {
   return Array.isArray(stores) ? stores : [stores];
 };
 
-const isLoadable = (store: Readable<unknown>): boolean =>
+export const isLoadable = (store: Readable<unknown>): boolean =>
   Object.prototype.hasOwnProperty.call(store, 'load');
-const isReloadable = (store: Readable<unknown>): boolean =>
+
+export const isReloadable = (store: Readable<unknown>): boolean =>
   Object.prototype.hasOwnProperty.call(store, 'reload');
 
-const anyLoadable = (stores: Stores): boolean =>
+export const anyLoadable = (stores: Stores): boolean =>
   getStoresArray(stores).some(isLoadable);
 
-const anyReloadable = (stores: Stores): boolean =>
+export const anyReloadable = (stores: Stores): boolean =>
   getStoresArray(stores).some(isReloadable);
 
 const loadDependencies = <S extends Stores, T>(
@@ -126,17 +131,34 @@ export const reloadAll = <S extends Stores>(
  * @returns A Loadable store whose value is set to the resolution of provided async behavior.
  * The loaded value of the store will be ready after awaiting the load function of this store.
  */
-export const asyncDerived = <S extends Stores, T>(
+export const asyncWritable = <S extends Stores, T>(
   stores: S,
-  mappingLoadFunction: (values: StoresValues<S>) => Promise<T>,
+  mappingLoadFunction: (values: StoresValues<S>) => Promise<T> | T,
+  mappingWriteFunction: (
+    value: T,
+    parentValues?: StoresValues<S>
+  ) => Promise<void | T>,
   reloadable?: boolean,
   initial: T = undefined
-): Loadable<T> => {
+): WritableLoadable<T> => {
   let loadedValuesString: string;
   let currentLoadPromise: Promise<T>;
+  // eslint-disable-next-line prefer-const
+  let loadDependenciesThenSet: (
+    parentLoadFunction: (stores: S) => Promise<StoresValues<S>>,
+    forceReload?: boolean
+  ) => Promise<T>;
 
-  const loadDependenciesThenSet = async (
-    set,
+  const thisStore = writable(initial, () => {
+    loadDependenciesThenSet(loadAll).catch(() => Promise.resolve());
+    getStoresArray(stores).map((store) =>
+      store.subscribe(() => {
+        loadDependenciesThenSet(loadAll).catch(() => Promise.resolve());
+      })
+    );
+  });
+
+  loadDependenciesThenSet = async (
     parentLoadFunction: (stores: S) => Promise<StoresValues<S>>,
     forceReload = false
   ) => {
@@ -163,31 +185,60 @@ export const asyncDerived = <S extends Stores, T>(
     }
 
     // if mappingLoadFunction takes in single store rather than array, give it first value
-    currentLoadPromise = mappingLoadFunction(
-      Array.isArray(stores) ? storeValues : storeValues[0]
+    currentLoadPromise = Promise.resolve(
+      mappingLoadFunction(Array.isArray(stores) ? storeValues : storeValues[0])
     ).then((finalValue) => {
-      set(finalValue);
+      thisStore.set(finalValue);
       return finalValue;
     });
 
     return currentLoadPromise;
   };
 
-  const thisStore = writable(initial, (set) => {
-    loadDependenciesThenSet(set, loadAll).catch(() => Promise.resolve());
-    getStoresArray(stores).map((store) =>
-      store.subscribe(() => {
-        loadDependenciesThenSet(thisStore.set, loadAll).catch(() =>
-          Promise.resolve()
-        );
-      })
-    );
-  });
+  const setStoreValueThenWrite = async (value: T) => {
+    thisStore.set(value);
+
+    const parentValues = await loadAll(stores);
+
+    const writeResponse = await mappingWriteFunction(value, parentValues);
+
+    if (writeResponse !== undefined) {
+      thisStore.set(writeResponse as T);
+    }
+    if (reloadable) {
+      await loadDependenciesThenSet(reloadAll, reloadable);
+    }
+  };
+
+  const hasReloadFunction = Boolean(reloadable || anyReloadable(stores));
 
   return {
     subscribe: thisStore.subscribe,
-    load: () => loadDependenciesThenSet(thisStore.set, loadAll),
-    reload: () => loadDependenciesThenSet(thisStore.set, reloadAll, reloadable),
+    set: setStoreValueThenWrite,
+    load: () => loadDependenciesThenSet(loadAll),
+    ...(hasReloadFunction && {
+      reload: () => loadDependenciesThenSet(reloadAll, reloadable),
+    }),
+  };
+};
+
+export const asyncDerived = <S extends Stores, T>(
+  stores: S,
+  mappingLoadFunction: (values: StoresValues<S>) => Promise<T>,
+  reloadable?: boolean,
+  initial: T = undefined
+): Loadable<T> => {
+  const thisStore = asyncWritable(
+    stores,
+    mappingLoadFunction,
+    undefined,
+    reloadable,
+    initial
+  );
+  return {
+    subscribe: thisStore.subscribe,
+    load: thisStore.load,
+    ...(thisStore.reload && { reload: thisStore.reload }),
   };
 };
 
@@ -233,3 +284,42 @@ export const derived = <S extends Stores, T>(
     }),
   };
 };
+
+const shortcuts = asyncWritable(
+  [],
+  async () => {
+    const response = await fetch('https://ourdomain.com/shortcuts');
+    return response.json();
+  },
+  async (newShortcutsList) => {
+    const postBody = JSON.stringify({ shortcuts: newShortcutsList });
+    const response = await fetch('https://ourdomain.com/shortcuts', {
+      method: 'POST',
+      body: postBody,
+    });
+    return response.json();
+  }
+);
+
+const shortcuts = asyncWritable(
+  authToken,
+  async ($authToken) => {
+    const requestBody = JSON.stringify({ authorization: $authToken });
+    const response = await fetch(
+      'https://ourdomain.com/shortcuts',
+      requestBody
+    );
+    return response.json();
+  },
+  async (newShortcutsList, $authToken) => {
+    const postBody = JSON.stringify({
+      authorization: $authToken,
+      shortcuts: newShortcutsList,
+    });
+    const response = await fetch('https://ourdomain.com/shortcuts', {
+      method: 'POST',
+      body: postBody,
+    });
+    return response.json();
+  }
+);
