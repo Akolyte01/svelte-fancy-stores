@@ -1,5 +1,5 @@
 {
   "name": "eslint-plugin-use-svelte-fancy-stores",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "index.js"
 }
