@@ -62,17 +62,17 @@ const userInfo = asyncReadable(
 );
 ```
 
-Now we have a Loadable and Reloadable userInfo store! As soon as our app renders a component that needs data from userInfo it will begin to load. We can `{#await userInfo.load()}` in our components that need userInfo to delay rendering until we have the data we need. If we need new userInfo we can call `userInfo.reload()` and our app will reactively update once we have the new data.
+Now we have a Loadable and Reloadable userInfo store! As soon as our app renders a component that needs data from userInfo it will begin to load. We can `{#await userInfo.load()}` in our components that need userInfo. This will delay rendering until we have the data we need. Since we have provided `true` as a third argument we can call `userInfo.reload()` to pull new data and reactively update once we have it.
 
 ## derived
 
-Okay this isn't a new store, but it does have some new features! We declare a derived store the same as ever, but if we derive from a ny Loadable store the derived store will also be Loadable, and the same for Reloadable.
+Okay this isn't a new store, but it does have some new features! We declare a derived store the same as ever, but if we derive from any Loadable store the derived store will also be Loadable, and the same for Reloadable.
 
 *What does that mean for our app..?*
 
 ```javascript
 const userSettings = derived(userInfo, ($userInfo) => $userInfo?.settings);
-const darkMode = derived(userSettings, ($userSetting) => $userSettings.darkMode);
+const darkMode = derived(userSettings, ($userSetting) => $userSettings?.darkMode);
 ```
 
 Now we've got a darkMode store that tracks whether our user has selected darkMode for our app. When we use this store in a component we can use `darkMode.load()` to await userInfo to finish loading, and we can call `darkMode.reload()` to get new userInfo if we encounter a situation where the user's darkMode setting may have changed. This isn't very impressive with our simple example, but as we build out our app and encounter situations where derived values come fom multiple endpoints through several layers of derivations this becomes much more useful.  Being able to call load and reload on just the data you need is much more convenient than tracking down all of the dependencies involved!
@@ -101,7 +101,7 @@ Here we have a store that reflects a paginated set of results from an endpoint. 
 
 ## asyncWritable
 
-Here's where things get a little more complicated. Just like the other async stores this store mirrors an existing store. Like a regular writable store this store will have a `set` function that lets you set its value. But why would we want to set the value of the store if the store's value comes from a network call? To answer this let's consider the following use case: in our app we have a list of shortcuts for our user. They can rearrange these shortcuts in order to personalize their experience. When a user rearranges their shortcuts we could manually make a new network request to save their choice, then reload the async store that tracks the list of shortcuts. However that would mean that the user would not see the results of their customization until the network request completes. Instead we can use an asyncWritable store. When the user customizes their list of shortcuts we will optimistically update the corresponding store. This update kicks off a network request to save the user's customization to our backend. Finally, when the network request completes we update our store to reflect the canonical version of the user's list.
+Here's where things get a little more complicated. Just like the other async stores this store mirrors an existing store. Like a regular writable store this store will have a `set` function that lets you set its value. But why would we want to set the value of the store if the store's value comes from a network call? To answer this let's consider the following use case: in our app we have a list of favorite shortcuts for our user. They can rearrange these shortcuts in order to personalize their experience. When a user rearranges their shortcuts we could manually make a new network request to save their choice, then reload the async store that tracks the list of shortcuts. However that would mean that the user would not see the results of their customization until the network request completes. Instead we can use an asyncWritable store. When the user customizes their list of shortcuts we will optimistically update the corresponding store. This update kicks off a network request to save the user's customization to our backend. Finally, when the network request completes we update our store to reflect the canonical version of the user's list.
 
 *So how do we accomplish this using an asyncWritable store..?*
 
@@ -123,7 +123,9 @@ const shortcuts = asyncWritable(
 );
 ```
 
-Our first two arguments work just like an asyncDerived store--we can pass any number of stores and we can use their values to set the value of the store once the parents have loaded. For our third argument we provide a write function that is invoked when we `set` the value of the store ourself. It takes in the new value of the store and then performs the work to persist that to the backend. If we invoke `shortcuts.set()` first the store updates to the value we pass to the function. then it invokes the async function we provided during definition in order to persist the new data. Finally it sets the value of the store to what we return from the async function. If our endpoint does not return any useful data we can instead have our async function return void and skip this step. Additionally we can provide a boolean to declare this store to be Reloadable as with other async stores. If we do so the store will reload once we have finished setting. This allows us to reload our store with canonical data if we need. One final feature is that we can include a second argument for our write function that will receive the values of parent stores.
+Our first two arguments work just like an asyncDerived store--we can pass any number of stores and we can use their values to set the value of the store once the parents have loaded. For our third argument we provide a write function that is invoked when we `set` the value of the store ourself. It takes in the new value of the store and then performs the work to persist that to the backend. If we invoke `shortcuts.set()` first the store updates to the value we pass to the function. then it invokes the async function we provided during definition in order to persist the new data. Finally it sets the value of the store to what we return from the async function. If our endpoint does not return any useful data we can instead have our async function return void and skip this step. Additionally we can provide a boolean to declare this store to be Reloadable as with other async stores. If we do so the store will reload once we have finished setting. This allows us to reload our store with canonical data if we need.
+
+One final feature is that we can include a second argument for our write function that will receive the values of parent stores.
 
 *Let's look at what that looks like...*
 
