@@ -2,6 +2,8 @@
 
 Extension of svelte default stores for dead-simple handling of complex asynchronous behavior.
 
+### [Developed and Maintained in Conjunction With Square](https://github.com/square)
+
 ## What it does
 
 Svelte Fancy Stores builds upon Svelte's default store behavior to empower your app to reactively respond to asynchronous data. Familiar syntax lets you build out async stores as easily as the ones you are already using, with full compatibility between them. Behind-the-scenes smarts handle order of operations, lazy loading, and limiting network calls, allowing you to focus on the relationships between data.
@@ -291,3 +293,15 @@ During mounting of our component we create an event listener that will trigger u
 If a user dismisses one of their favorites we will `set` favoriteBlogs. This means we will immediately update the favoriteBlogs store, and thus blogShortcuts, as a derived store, will update as well. This means we can give our user instant feedback for their dismiss action. After the store updates the SET function we provided in defining favoriteBlogs will execute, saving the new list of favorites to our backend. Since we did not return a value in that SET function the value of the store will not update when this async behavior completes. Instead we have declared favoriteBlogs to be Reloadable, so it will attempt to reload data after it has saved to our backend. As before this will reload the store's Reloadable ancestor--userPersonalization. This means we can reactively update any changes to suggestions that occur as a result of changes to favorites, and in turn fetch any new blurbs needed.
 
 That's a lot going on! However it is all handled by the contracts we have established between stores. Once you understand the capabilities of each kind of store it becomes easy to break apart complicated order of operation problems simply by tackling things one store at a time. So dive in, and have fun!
+
+## Extras
+
+If you are using eslint, `eslint-plugin-svelte-fancy-stores` will enforce usage of svelte-fancy-stores and can be used to autofix usages of `svelte/store`.
+
+```javascript
+// .eslintrc.js
+module.exports = {
+  plugins: ['svelte-fancy-stores'],
+  rules: {'svelte-fancy-stores/use-fancy-stores': 'error'}
+}
+```
