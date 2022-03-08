@@ -49,11 +49,11 @@ const getStoresArray = (stores: Stores): Readable<unknown>[] => {
   return Array.isArray(stores) ? stores : [stores];
 };
 
-export const isLoadable = (store: Readable<unknown>): boolean =>
-  Object.prototype.hasOwnProperty.call(store, 'load');
+export const isLoadable = (object: unknown): boolean =>
+  Object.prototype.hasOwnProperty.call(object, 'load');
 
-export const isReloadable = (store: Readable<unknown>): boolean =>
-  Object.prototype.hasOwnProperty.call(store, 'reload');
+export const isReloadable = (object: unknown): boolean =>
+  Object.prototype.hasOwnProperty.call(object, 'reload');
 
 export const anyLoadable = (stores: Stores): boolean =>
   getStoresArray(stores).some(isLoadable);
