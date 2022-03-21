@@ -309,6 +309,8 @@ describe('asyncWritable', () => {
 
       await myAsyncWritable.set('final');
       expect(get(myAsyncWritable)).toBe('final');
+      const loadedValue = await myAsyncWritable.load();
+      expect(loadedValue).toBe('final');
 
       expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
     });
@@ -330,6 +332,8 @@ describe('asyncWritable', () => {
 
       await myAsyncWritable.set('intermediate');
       expect(get(myAsyncWritable)).toBe('resolved from intermediate');
+      const loadedValue = await myAsyncWritable.load();
+      expect(loadedValue).toBe('resolved from intermediate');
 
       expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
     });
@@ -371,6 +375,25 @@ describe('asyncWritable', () => {
 
       await myAsyncWritable.set('final').catch(() => Promise.resolve());
       expect(get(myAsyncWritable)).toBe('final');
+      const loadedValue = await myAsyncWritable.load();
+      expect(loadedValue).toBe('final');
+
+      expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('updates to expected value', async () => {
+      const mappingWriteFunction = jest.fn(() => Promise.resolve());
+      const myAsyncWritable = asyncWritable(
+        [],
+        () => Promise.resolve('initial'),
+        mappingWriteFunction
+      );
+      myAsyncWritable.subscribe(jest.fn);
+
+      await myAsyncWritable.update((value) => `updated from ${value}`);
+      expect(get(myAsyncWritable)).toBe('updated from initial');
+      const loadedValue = await myAsyncWritable.load();
+      expect(loadedValue).toBe('updated from initial');
 
       expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
     });
