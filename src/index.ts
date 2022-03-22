@@ -2,6 +2,7 @@ import {
   derived as vanillaDerived,
   get,
   Readable,
+  Unsubscriber,
   Updater,
   writable,
 } from 'svelte/store';
@@ -297,19 +298,49 @@ export const asyncReadable = <T>(
   return asyncDerived([], loadFunction, reloadable, initial);
 };
 
+type DerivedMapper<S extends Stores, T> = (values: StoresValues<S>) => T;
+type SubscribeMapper<S extends Stores, T> = (
+  values: StoresValues<S>,
+  set: (value: T) => void
+) => Unsubscriber | void;
+
+/**
+ * A Derived store that is considered 'loaded' when all of its parents have loaded (and so on).
+ * @param stores Any Readable or array of Readables used to generate the value of this store.
+ * Any Loadable stores need to load before this store is considered loaded.
+ * @param subscriberMapper A function that sets the value of the store.
+ * @param initialValue Initial value
+ * @returns A Loadable store that whose value is derived from the provided parent stores.
+ * The loaded value of the store will be ready after awaiting the load function of this store.
+ */
+export function derived<S extends Stores, T>(
+  stores: S,
+  fn: SubscribeMapper<S, T>,
+  initialValue?: T
+): Loadable<T>;
+
 /**
  * A Derived store that is considered 'loaded' when all of its parents have loaded (and so on).
  * @param stores Any Readable or array of Readables used to generate the value of this store.
  * Any Loadable stores need to load before this store is considered loaded.
  * @param mappingFunction A function that maps the values of the parent store to the value of this store.
+ * @param initialValue Initial value
  * @returns A Loadable store that whose value is derived from the provided parent stores.
  * The loaded value of the store will be ready after awaiting the load function of this store.
  */
-export const derived = <S extends Stores, T>(
+export function derived<S extends Stores, T>(
   stores: S,
-  mappingFunction: (values: StoresValues<S>) => T
-): Loadable<T> => {
-  const thisStore = vanillaDerived(stores, mappingFunction);
+  mappingFunction: DerivedMapper<S, T>,
+  initialValue?: T
+): Loadable<T>;
+
+// eslint-disable-next-line func-style
+export function derived<S extends Stores, T>(
+  stores: S,
+  fn: DerivedMapper<S, T> | SubscribeMapper<S, T>,
+  initialValue?: T
+): Readable<T> {
+  const thisStore = vanillaDerived(stores, fn as any, initialValue);
   return {
     subscribe: thisStore.subscribe,
     ...(anyLoadable(stores) && {
@@ -319,4 +350,4 @@ export const derived = <S extends Stores, T>(
       reload: loadDependencies(thisStore, reloadAll, stores),
     }),
   };
-};
+}
