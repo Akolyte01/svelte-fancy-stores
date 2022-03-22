@@ -1,23 +1,20 @@
 import {
   derived as vanillaDerived,
-  get as vanillaGet,
-  Readable as VanillaReadable,
-  readable as vanillaReadable,
-  Subscriber as VanillaSubscriber,
-  Unsubscriber as VanillaUnsubscriber,
-  Writable as VanillaWritable,
-  writable as vanillaWritable,
+  get,
+  Readable,
+  Updater,
+  writable,
 } from 'svelte/store';
 
-// PASS THROUGH
-
-export const get = vanillaGet;
-export type Readable<T> = VanillaReadable<T>;
-export const readable = vanillaReadable;
-export type Subscriber<T> = VanillaSubscriber<T>;
-export type Unsubscriber = VanillaUnsubscriber;
-export type Writable<T> = VanillaWritable<T>;
-export const writable = vanillaWritable;
+export { get, readable, writable } from 'svelte/store';
+export type {
+  Readable,
+  Unsubscriber,
+  Updater,
+  StartStopNotifier,
+  Subscriber,
+  Writable,
+} from 'svelte/store';
 
 // TYPES
 
@@ -28,6 +25,7 @@ export interface Loadable<T> extends Readable<T> {
 
 export interface WritableLoadable<T> extends Loadable<T> {
   set(value: T): Promise<void>;
+  update(updater: Updater<T>): Promise<void>;
 }
 
 /* These types come from Svelte but are not exported, so copying them here */
@@ -140,7 +138,7 @@ export const reloadAll = <S extends Stores>(
 export const asyncWritable = <S extends Stores, T>(
   stores: S,
   mappingLoadFunction: (values: StoresValues<S>) => Promise<T> | T,
-  mappingWriteFunction: (
+  mappingWriteFunction?: (
     value: T,
     parentValues?: StoresValues<S>
   ) => Promise<void | T>,
@@ -202,18 +200,35 @@ export const asyncWritable = <S extends Stores, T>(
   };
 
   const setStoreValueThenWrite = async (value: T) => {
+    try {
+      await loadDependenciesThenSet(loadAll);
+      currentLoadPromise = currentLoadPromise.then(() => value);
+    } catch {
+      currentLoadPromise = currentLoadPromise.catch(() => value);
+    }
     thisStore.set(value);
 
-    const parentValues = await loadAll(stores);
+    if (mappingWriteFunction) {
+      const parentValues = await loadAll(stores);
 
-    const writeResponse = await mappingWriteFunction(value, parentValues);
+      const writeResponse = (await mappingWriteFunction(
+        value,
+        parentValues
+      )) as T;
 
-    if (writeResponse !== undefined) {
-      thisStore.set(writeResponse as T);
+      if (writeResponse !== undefined) {
+        thisStore.set(writeResponse);
+        currentLoadPromise = currentLoadPromise.then(() => writeResponse);
+      }
     }
     if (reloadable) {
       await loadDependenciesThenSet(reloadAll, reloadable);
     }
+  };
+
+  const updateStoreValueThenWrite = async (updater: Updater<T>) => {
+    const currentValue = await loadDependenciesThenSet(loadAll);
+    return setStoreValueThenWrite(updater(currentValue));
   };
 
   const hasReloadFunction = Boolean(reloadable || anyReloadable(stores));
@@ -221,6 +236,7 @@ export const asyncWritable = <S extends Stores, T>(
   return {
     subscribe: thisStore.subscribe,
     set: setStoreValueThenWrite,
+    update: updateStoreValueThenWrite,
     load: () => loadDependenciesThenSet(loadAll),
     ...(hasReloadFunction && {
       reload: () => loadDependenciesThenSet(reloadAll, reloadable),
