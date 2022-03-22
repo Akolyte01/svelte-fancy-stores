@@ -338,7 +338,7 @@ describe('asyncWritable', () => {
       expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
     });
 
-    it('reloads value when reloadable', async () => {
+    it('sets value when reloadable', async () => {
       const mappingLoadFunction = jest.fn(() => Promise.resolve('load'));
       const mappingWriteFunction = jest.fn(() => Promise.resolve('write'));
       const myAsyncWritable = asyncWritable(
@@ -354,10 +354,10 @@ describe('asyncWritable', () => {
       expect(get(myAsyncWritable)).toBe('load');
 
       await myAsyncWritable.set('set');
-      expect(get(myAsyncWritable)).toBe('load');
+      expect(get(myAsyncWritable)).toBe('write');
 
       expect(mappingWriteFunction).toHaveBeenCalledTimes(1);
-      expect(mappingLoadFunction).toHaveBeenCalledTimes(2);
+      expect(mappingLoadFunction).toHaveBeenCalledTimes(1);
     });
 
     it('still sets value when rejected', async () => {
@@ -538,7 +538,7 @@ describe('asyncWritable', () => {
       expect(myAsyncWritable.load()).resolves.toBe('derived from second value');
 
       await myAsyncWritable.set('set value');
-      expect(get(myAsyncWritable)).toBe('derived from third value');
+      expect(get(myAsyncWritable)).toBe('set value');
     });
 
     it('rejects load when parent load fails', () => {

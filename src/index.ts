@@ -129,8 +129,7 @@ export const reloadAll = <S extends Stores>(
  * @param mappingWriteFunction A function that takes in the new value of the store and uses it to perform async behavior.
  * Typically this would be to persist the change. If this value resolves to a value the store will be set to it.
  * @param reloadable A flag that indicates whether this store should restart its asynchronous behavior whenever `reload`
- * is invoked on this store or any of its children. If this store is reloadable it will also restart its asynchronous behavior
- * after it has finished handling 'setting' the store.
+ * is invoked on this store or any of its children.
  * @param initial The initial value of the store before it is loaded or on load failure. Otherwise undefined.
  * @returns A Loadable store whose value is set to the resolution of provided async behavior.
  * The loaded value of the store will be ready after awaiting the load function of this store.
@@ -220,9 +219,6 @@ export const asyncWritable = <S extends Stores, T>(
         thisStore.set(writeResponse);
         currentLoadPromise = currentLoadPromise.then(() => writeResponse);
       }
-    }
-    if (reloadable) {
-      await loadDependenciesThenSet(reloadAll, reloadable);
     }
   };
 
