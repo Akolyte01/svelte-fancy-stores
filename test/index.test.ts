@@ -10,6 +10,9 @@ import {
   loadAll,
   readable,
   reloadAll,
+  reset,
+  resetSvelteFancyStoreTestMode,
+  setSvelteFancyStoreTestMode,
   writable,
 } from '../src/index';
 
@@ -628,6 +631,86 @@ describe('synchronous derived', () => {
       nonAsyncParent.set('L');
       expect(get(myDerived)).toBe('L');
     });
+  });
+});
+
+describe('test mode', () => {
+  const mockLoad = jest.fn();
+  const asyncWritableChildLoad = jest.fn();
+  const asyncWritableGrandChildLoad = jest.fn();
+
+  beforeEach(() => {
+    setSvelteFancyStoreTestMode();
+  });
+
+  afterEach(() => {
+    resetSvelteFancyStoreTestMode();
+    mockLoad.mockReset();
+    asyncWritableChildLoad.mockReset();
+    asyncWritableGrandChildLoad.mockReset();
+  });
+
+  it('is very interesting', async () => {
+    const asyncReadableParent: Loadable<string> = asyncReadable(
+      'storeA',
+      () => {
+        mockLoad();
+        return Promise.resolve('asyncReadableParent');
+      },
+      false
+    );
+
+    const asyncWritableChild = asyncWritable(
+      asyncReadableParent,
+      () => {
+        asyncWritableChildLoad();
+        return 'asyncWritableChild';
+      },
+      () => Promise.resolve(),
+      false,
+      'storeB'
+    );
+
+    const asyncWritableGrandChild = asyncWritable(
+      asyncWritableChild,
+      () => {
+        asyncWritableGrandChildLoad();
+        return 'asyncWritableGrandChild';
+      },
+      () => Promise.resolve(),
+      false,
+      'storeC'
+    );
+
+    await asyncWritableGrandChild.load();
+
+    expect(mockLoad).toHaveBeenCalledTimes(1);
+    expect(asyncWritableChildLoad).toHaveBeenCalledTimes(1);
+    expect(asyncWritableGrandChildLoad).toHaveBeenCalledTimes(1);
+
+    await asyncWritableGrandChild.load();
+
+    expect(mockLoad).toHaveBeenCalledTimes(1);
+    expect(asyncWritableChildLoad).toHaveBeenCalledTimes(1);
+    expect(asyncWritableGrandChildLoad).toHaveBeenCalledTimes(1);
+
+    reset(asyncWritableGrandChild);
+
+    expect(mockLoad).toHaveBeenCalledTimes(1);
+    expect(asyncWritableChildLoad).toHaveBeenCalledTimes(1);
+    expect(asyncWritableGrandChildLoad).toHaveBeenCalledTimes(1);
+
+    await asyncWritableGrandChild.load();
+
+    expect(mockLoad).toHaveBeenCalledTimes(2);
+    expect(asyncWritableChildLoad).toHaveBeenCalledTimes(2);
+    expect(asyncWritableGrandChildLoad).toHaveBeenCalledTimes(2);
+
+    get(asyncWritableChild);
+
+    expect(mockLoad).toHaveBeenCalledTimes(2);
+    expect(asyncWritableChildLoad).toHaveBeenCalledTimes(2);
+    expect(asyncWritableGrandChildLoad).toHaveBeenCalledTimes(2);
   });
 });
 /* eslint-enable prefer-promise-reject-errors */
