@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import {
   derived as vanillaDerived,
   get,
@@ -61,13 +62,16 @@ export const anyReloadable = (stores: Stores): boolean =>
   getStoresArray(stores).some(isReloadable);
 
 const loadDependencies = <S extends Stores, T>(
-  thisStore: Readable<T>,
+  thisStoreValue: T,
   loadFunction: (stores: S) => Promise<unknown>,
   stores: S
 ): (() => Promise<T>) => {
   return async () => {
     await loadFunction(stores);
-    return get(thisStore);
+    // make sure that all parent states are settled
+    await tick();
+
+    return thisStoreValue;
   };
 };
 
@@ -84,6 +88,7 @@ export const loadAll = <S extends Stores>(
     if (Object.prototype.hasOwnProperty.call(store, 'load')) {
       return (store as Loadable<unknown>).load();
     } else {
+      console.log('this is screwed');
       return get(store);
     }
   });
@@ -113,6 +118,18 @@ export const reloadAll = <S extends Stores>(
   });
 
   return Promise.all(reloadPromises) as Promise<StoresValues<S>>;
+};
+
+const getSvelteFancyStoreTestMode = (): boolean => {
+  return global.__FANCY_STORE_IN_TESTING__;
+};
+
+export const setSvelteFancyStoreTestMode = (): void => {
+  global.__FANCY_STORE_IN_TESTING__ = true;
+};
+
+export const resetSvelteFancyStoreTestMode = (): void => {
+  global.__FANCY_STORE_IN_TESTING__ = false;
 };
 
 // STORES
@@ -153,10 +170,15 @@ export const asyncWritable = <S extends Stores, T>(
     forceReload?: boolean
   ) => Promise<T>;
 
+  const storeValues = [];
+
   const thisStore = writable(initial, () => {
+    console.log('store initial');
     loadDependenciesThenSet(loadAll).catch(() => Promise.resolve());
     getStoresArray(stores).map((store) =>
-      store.subscribe(() => {
+      store.subscribe((storeValue) => {
+        storeValues.push(storeValue);
+        console.log('store subscribers');
         loadDependenciesThenSet(loadAll).catch(() => Promise.resolve());
       })
     );
@@ -175,10 +197,11 @@ export const asyncWritable = <S extends Stores, T>(
       return currentLoadPromise;
     }
 
-    const storeValues = getStoresArray(stores).map((store) =>
-      get(store)
-    ) as StoresValues<S>;
-
+    // const storeValues = getStoresArray(stores).map(
+    //   (store) =>
+    //     // get(store)
+    //     'abc'
+    // ) as StoresValues<S>;
     if (!forceReload) {
       const newValuesString = JSON.stringify(storeValues);
       if (newValuesString === loadedValuesString) {
@@ -187,15 +210,17 @@ export const asyncWritable = <S extends Stores, T>(
       }
       loadedValuesString = newValuesString;
     }
-
+    // console.log('am I still getting loaded?', storeValues);
     // if mappingLoadFunction takes in single store rather than array, give it first value
     currentLoadPromise = Promise.resolve(
       mappingLoadFunction(Array.isArray(stores) ? storeValues : storeValues[0])
     ).then((finalValue) => {
+      // console.log('setting store value', finalValue);
       thisStore.set(finalValue);
       return finalValue;
     });
 
+    // console.log('I am getting out of here');
     return currentLoadPromise;
   };
 
@@ -234,7 +259,8 @@ export const asyncWritable = <S extends Stores, T>(
     subscribe: thisStore.subscribe,
     set: setStoreValueThenWrite,
     update: updateStoreValueThenWrite,
-    load: () => loadDependenciesThenSet(loadAll),
+    load: () => loadDependenciesThenSet(loadAll, getSvelteFancyStoreTestMode()),
+    // load: () => loadDependenciesThenSet(loadAll),
     ...(hasReloadFunction && {
       reload: () => loadDependenciesThenSet(reloadAll, reloadable),
     }),
@@ -337,13 +363,17 @@ export function derived<S extends Stores, T>(
   initialValue?: T
 ): Readable<T> {
   const thisStore = vanillaDerived(stores, fn as any, initialValue);
+  let thisStoreValue: T;
+  thisStore.subscribe((storeValue) => {
+    thisStoreValue = storeValue;
+  });
   return {
     subscribe: thisStore.subscribe,
     ...(anyLoadable(stores) && {
-      load: loadDependencies(thisStore, loadAll, stores),
+      load: loadDependencies(thisStoreValue, loadAll, stores),
     }),
     ...(anyReloadable(stores) && {
-      reload: loadDependencies(thisStore, reloadAll, stores),
+      reload: loadDependencies(thisStoreValue, reloadAll, stores),
     }),
   };
 }
