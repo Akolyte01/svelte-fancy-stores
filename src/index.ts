@@ -29,6 +29,13 @@ export interface WritableLoadable<T> extends Loadable<T> {
   update(updater: Updater<T>): Promise<void>;
 }
 
+// This is an internal-use store type that enables resetting itself for testing purpose
+interface ResettableWritableLoadable<T> extends Loadable<T> {
+  set(value: T): Promise<void>;
+  update(updater: Updater<T>): Promise<void>;
+  resetAll(): void;
+}
+
 /* These types come from Svelte but are not exported, so copying them here */
 /* One or more `Readable`s. */
 export declare type Stores =
@@ -115,6 +122,34 @@ export const reloadAll = <S extends Stores>(
   return Promise.all(reloadPromises) as Promise<StoresValues<S>>;
 };
 
+const getSvelteFancyStoreTestMode = (): boolean => {
+  return global.__FANCY_STORE_IN_TESTING__;
+};
+
+export const setSvelteFancyStoreTestMode = (): void => {
+  global.__FANCY_STORE_IN_TESTING__ = true;
+};
+
+export const resetSvelteFancyStoreTestMode = (): void => {
+  global.__FANCY_STORE_IN_TESTING__ = false;
+};
+
+export const reset = <T>(store: Loadable<T> | WritableLoadable<T>): void => {
+  if (!getSvelteFancyStoreTestMode()) {
+    throw new Error('This can only be reset in testing mode');
+  }
+
+  // We do not reset non-loadable stores.
+  // Maybe we should consider a strategy to reset those though...
+  if (Object.prototype.hasOwnProperty.call(store, 'resetAll')) {
+    (store as ResettableWritableLoadable<T>).resetAll();
+  }
+};
+
+const resetAllStores = (stores: Stores) => {
+  getStoresArray(stores).forEach((store) => reset(store));
+};
+
 // STORES
 
 /**
@@ -152,11 +187,12 @@ export const asyncWritable = <S extends Stores, T>(
     parentLoadFunction: (stores: S) => Promise<StoresValues<S>>,
     forceReload?: boolean
   ) => Promise<T>;
-
+  const storeValues = [];
   const thisStore = writable(initial, () => {
     loadDependenciesThenSet(loadAll).catch(() => Promise.resolve());
-    getStoresArray(stores).map((store) =>
-      store.subscribe(() => {
+    getStoresArray(stores).map((store, i) =>
+      store.subscribe((storeValue) => {
+        storeValues[i] = storeValue;
         loadDependenciesThenSet(loadAll).catch(() => Promise.resolve());
       })
     );
@@ -175,9 +211,16 @@ export const asyncWritable = <S extends Stores, T>(
       return currentLoadPromise;
     }
 
-    const storeValues = getStoresArray(stores).map((store) =>
-      get(store)
-    ) as StoresValues<S>;
+    // This causes an interesting race condition.
+    // Get does subscribe and unsubscribe right away to capture the value.
+    // So if we call currentStore.load() (currentStore is an asyncDerive from parentStore)
+    // The subscribe action on parent would trigger a loadDependenciesThenSet for current store (line 195).
+    // There is no guarantee that the currentStore.loadDependenciesThenSet is completed and therefore there
+    // can be two competing loadDependenciesThenSets.
+
+    // const storeValues = getStoresArray(stores).map((store) =>
+    //   get(store)
+    // ) as StoresValues<S>;
 
     if (!forceReload) {
       const newValuesString = JSON.stringify(storeValues);
@@ -230,6 +273,18 @@ export const asyncWritable = <S extends Stores, T>(
 
   const hasReloadFunction = Boolean(reloadable || anyReloadable(stores));
 
+  const resetAll = () => {
+    if (!getSvelteFancyStoreTestMode()) {
+      throw new Error('This can only be reset in testing mode');
+    }
+
+    loadedValuesString = undefined;
+    currentLoadPromise = undefined;
+    thisStore.set(initial);
+
+    resetAllStores(stores);
+  };
+
   return {
     subscribe: thisStore.subscribe,
     set: setStoreValueThenWrite,
@@ -237,6 +292,9 @@ export const asyncWritable = <S extends Stores, T>(
     load: () => loadDependenciesThenSet(loadAll),
     ...(hasReloadFunction && {
       reload: () => loadDependenciesThenSet(reloadAll, reloadable),
+    }),
+    ...(getSvelteFancyStoreTestMode() && {
+      resetAll,
     }),
   };
 };
@@ -272,6 +330,9 @@ export const asyncDerived = <S extends Stores, T>(
     subscribe: thisStore.subscribe,
     load: thisStore.load,
     ...(thisStore.reload && { reload: thisStore.reload }),
+    ...(getSvelteFancyStoreTestMode() && {
+      resetAll: (thisStore as ResettableWritableLoadable<T>).resetAll,
+    }),
   };
 };
 
@@ -336,7 +397,10 @@ export function derived<S extends Stores, T>(
   fn: DerivedMapper<S, T> | SubscribeMapper<S, T>,
   initialValue?: T
 ): Readable<T> {
-  const thisStore = vanillaDerived(stores, fn as any, initialValue);
+  const generateDerivedStore = () => {
+    return vanillaDerived(stores, fn as any, initialValue);
+  };
+  let thisStore = generateDerivedStore();
   return {
     subscribe: thisStore.subscribe,
     ...(anyLoadable(stores) && {
@@ -344,6 +408,12 @@ export function derived<S extends Stores, T>(
     }),
     ...(anyReloadable(stores) && {
       reload: loadDependencies(thisStore, reloadAll, stores),
+    }),
+    ...(getSvelteFancyStoreTestMode() && {
+      resetAll: () => {
+        resetAllStores(stores);
+        thisStore = generateDerivedStore();
+      },
     }),
   };
 }
